@@ -102,4 +102,4 @@ docker compose logs -f broker
     just broker up ./.env.broker.base
     ```
 
-**Note : This is the basic stuff, your node will run fine now but I still need to add more things here, so u should better to check this guide back later**
+**Note : This is the basic stuff, your node will run fine now but I still need to add more things here, so u should check this guide back later**
