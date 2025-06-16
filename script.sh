@@ -235,7 +235,7 @@ install_nvidia_container_toolkit() {
     # Set non-interactive mode and install nvidia-docker2 without prompts
     export DEBIAN_FRONTEND=noninteractive
     echo 'nvidia-docker2 nvidia-docker2/daemon.json boolean false' | sudo debconf-set-selections
-    sudo -E apt install -y nvidia-docker2 2>&1 | tee -a "$LOG_FILE"
+    sudo apt-get install -y -o Dpkg::Options::="--force-confold" nvidia-docker2
 
     # Configure Docker daemon after installation
     configure_docker_nvidia_runtime
