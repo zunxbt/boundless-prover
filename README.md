@@ -48,6 +48,15 @@ Your public key has been saved in /home/codespace/.ssh/id_rsa.pub
 - After that visit `Instances` section, if your ordered GPU is ready then u will see `Connect` button there
 - Click on it to copy the command and then paste this command on your terminal to access your GPU
 
+## 🍓Prerequisites
+**1. Claim Faucet**
+- First claim USDC faucet from this [website](https://faucet.circle.com/) to your wallet
+- If you want to run this prover on Mainnet as well, then u need to have real USDC on Base Mainnet in your wallet
+
+**2. Get RPC**
+- Get RPC for the network from [Alchemy website](https://dashboard.alchemy.com/chains)
+- If you want to run this prover on eth-sepolia then u need to get eth sepolia rpc, if base-sepolia then base-sepoia rpc or if base mainnet then u need to get base mainnet rpc
+
 ## 📥 Installation
 - Install `curl` command
 ```
