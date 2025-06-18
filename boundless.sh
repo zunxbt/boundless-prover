@@ -234,7 +234,7 @@ print_success "Repository cloned and checked out to release-0.10"
 
 print_step "Replacing setup script..."
 rm scripts/setup.sh
-curl -o scripts/setup.sh https://raw.githubusercontent.com/zunxbt/boundless-prover/refs/heads/main/script.sh
+curl -o scripts/setup.sh https://raw.githubusercontent.com/Stevesv1/boundless-prover/refs/heads/main/script.sh
 chmod +x scripts/setup.sh
 print_success "Setup script replaced"
 
