@@ -41,8 +41,8 @@ check_os() {
 
 update_system() {
     info "Updating and upgrading the system packages..."
-    sudo apt update -y | tee -a "$LOG_FILE"
-    sudo apt upgrade -y | tee -a "$LOG_FILE"
+    apt update -y | tee -a "$LOG_FILE"
+    apt upgrade -y | tee -a "$LOG_FILE"
     success "System packages updated and upgraded successfully."
 }
 
@@ -52,28 +52,30 @@ install_packages() {
         ubuntu-drivers-common
         build-essential
         libssl-dev
+        pkg-config
         curl
         gnupg
         ca-certificates
         lsb-release
         jq
+        apt-transport-https
+        software-properties-common
+        gnupg-agent
     )
 
     info "Installing essential packages: ${packages[*]}..."
-    sudo apt install -y "${packages[@]}" | tee -a "$LOG_FILE"
+    apt install -y "${packages[@]}" | tee -a "$LOG_FILE"
     success "Essential packages installed successfully."
 }
 
 install_gpu_drivers() {
     info "Checking for existing NVIDIA GPU driver..."
 
-    # Check if NVIDIA driver module is already loaded
     if lsmod | grep -q "^nvidia"; then
         success "NVIDIA driver is already loaded in the kernel. Skipping installation."
         return 0
     fi
 
-    # Optional: check via nvidia-smi (if available)
     if command -v nvidia-smi &> /dev/null; then
         if nvidia-smi &> /dev/null; then
             success "NVIDIA driver is already installed and functional. Skipping installation."
@@ -94,7 +96,7 @@ install_gpu_drivers() {
         info "GPU driver package ($driver) is already installed. Skipping installation."
     else
         info "Installing GPU driver package: $driver"
-        if sudo apt-get install -y "$driver" 2>&1 | tee -a "$LOG_FILE"; then
+        if apt-get install -y "$driver" 2>&1 | tee -a "$LOG_FILE"; then
             success "GPU driver ($driver) installed successfully."
         else
             error "Failed to install GPU driver ($driver)."
@@ -129,16 +131,6 @@ install_rust() {
         echo 'source $HOME/.cargo/env' >> ~/.profile
     fi
     
-    if [[ -n "${SUDO_USER:-}" ]] && [[ "$SUDO_USER" != "root" ]]; then
-        local user_home="/home/$SUDO_USER"
-        if ! sudo -u "$SUDO_USER" grep -q 'source $HOME/.cargo/env' "$user_home/.bashrc" 2>/dev/null; then
-            echo 'source $HOME/.cargo/env' | sudo -u "$SUDO_USER" tee -a "$user_home/.bashrc" > /dev/null
-        fi
-        if ! sudo -u "$SUDO_USER" grep -q 'source $HOME/.cargo/env' "$user_home/.profile" 2>/dev/null; then
-            echo 'source $HOME/.cargo/env' | sudo -u "$SUDO_USER" tee -a "$user_home/.profile" > /dev/null
-        fi
-    fi
-    
     export PATH="$HOME/.cargo/bin:$PATH"
     success "Rust environment configured for current and future sessions."
 }
@@ -151,7 +143,7 @@ install_just() {
 
     info "Installing the 'just' command-runner..."
     curl --proto '=https' --tlsv1.2 -sSf https://just.systems/install.sh \
-    | sudo bash -s -- --to /usr/local/bin | tee -a "$LOG_FILE"
+    | bash -s -- --to /usr/local/bin | tee -a "$LOG_FILE"
     success "'just' installed successfully."
 }
 
@@ -164,10 +156,10 @@ install_cuda() {
         distribution=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')$(grep '^VERSION_ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"'| tr -d '\.')
         info "Installing Nvidia CUDA keyring and repo"
         wget https://developer.download.nvidia.com/compute/cuda/repos/$distribution/$(/usr/bin/uname -m)/cuda-keyring_1.1-1_all.deb 2>&1 | tee -a "$LOG_FILE"
-        sudo dpkg -i cuda-keyring_1.1-1_all.deb 2>&1 | tee -a "$LOG_FILE"
+        dpkg -i cuda-keyring_1.1-1_all.deb 2>&1 | tee -a "$LOG_FILE"
         rm cuda-keyring_1.1-1_all.deb
-        sudo apt-get update 2>&1 | tee -a "$LOG_FILE"
-        sudo apt-get install -y cuda-toolkit 2>&1 | tee -a "$LOG_FILE"
+        apt-get update 2>&1 | tee -a "$LOG_FILE"
+        apt-get install -y cuda-toolkit 2>&1 | tee -a "$LOG_FILE"
         success "CUDA Toolkit installed successfully."
     fi
 }
@@ -177,41 +169,37 @@ install_docker() {
         info "Docker is already installed. Skipping Docker installation."
     else
         info "Installing Docker..."
-        sudo apt install -y apt-transport-https ca-certificates curl gnupg-agent software-properties-common 2>&1 | tee -a "$LOG_FILE"
+        
+        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg 2>&1 | tee -a "$LOG_FILE"
 
-        curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /usr/share/keyrings/docker-archive-keyring.gpg 2>&1 | tee -a "$LOG_FILE"
+        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | tee /etc/apt/sources.list.d/docker.list > /dev/null
 
-        echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/docker-archive-keyring.gpg] https://download.docker.com/linux/ubuntu $(lsb_release -cs) stable" | sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
+        apt update -y 2>&1 | tee -a "$LOG_FILE"
 
-        sudo apt update -y 2>&1 | tee -a "$LOG_FILE"
+        apt install -y docker-ce docker-ce-cli containerd.io 2>&1 | tee -a "$LOG_FILE"
 
-        sudo apt install -y docker-ce docker-ce-cli containerd.io 2>&1 | tee -a "$LOG_FILE"
+        systemctl enable docker 2>&1 | tee -a "$LOG_FILE"
 
-        sudo systemctl enable docker 2>&1 | tee -a "$LOG_FILE"
-
-        sudo systemctl start docker 2>&1 | tee -a "$LOG_FILE"
+        systemctl start docker 2>&1 | tee -a "$LOG_FILE"
 
         success "Docker installed and started successfully."
     fi
 }
 
-add_user_to_docker_group() {
-    local username
-    username=$(logname 2>/dev/null || echo "$SUDO_USER")
-
-    if ! getent group docker >/dev/null; then
-        info "Creating 'docker' group..."
-        sudo groupadd docker
+install_docker_compose() {
+    if command -v docker-compose &> /dev/null || docker compose version &> /dev/null; then
+        info "Docker Compose is already installed. Skipping Docker Compose installation."
+        return
     fi
 
-    if id -nG "$username" | grep -qw "docker"; then
-        info "User '$username' is already in the 'docker' group."
-    else
-        info "Adding user '$username' to the 'docker' group..."
-        sudo usermod -aG docker "$username" 2>&1 | tee -a "$LOG_FILE"
-        success "User '$username' added to the 'docker' group."
-        info "To apply the new group membership, please log out and log back in."
-    fi
+    info "Installing Docker Compose..."
+    mkdir -p ~/.docker/cli-plugins
+    curl -SL https://github.com/docker/compose/releases/download/v2.24.6/docker-compose-linux-x86_64 -o ~/.docker/cli-plugins/docker-compose
+    chmod +x ~/.docker/cli-plugins/docker-compose
+    
+    ln -sf ~/.docker/cli-plugins/docker-compose /usr/local/bin/docker-compose
+    
+    success "Docker Compose installed successfully."
 }
 
 install_nvidia_container_toolkit() {
@@ -227,20 +215,18 @@ install_nvidia_container_toolkit() {
 
     local distribution
     distribution=$(grep '^ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')$(grep '^VERSION_ID=' /etc/os-release | cut -d'=' -f2 | tr -d '"')
-    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | sudo apt-key add - 2>&1 | tee -a "$LOG_FILE"
-    curl -s -L https://nvidia.github.io/nvidia-docker/"$distribution"/nvidia-docker.list | sudo tee /etc/apt/sources.list.d/nvidia-docker.list 2>&1 | tee -a "$LOG_FILE"
+    curl -s -L https://nvidia.github.io/nvidia-docker/gpgkey | apt-key add - 2>&1 | tee -a "$LOG_FILE"
+    curl -s -L https://nvidia.github.io/nvidia-docker/"$distribution"/nvidia-docker.list | tee /etc/apt/sources.list.d/nvidia-docker.list 2>&1 | tee -a "$LOG_FILE"
 
-    sudo apt update -y 2>&1 | tee -a "$LOG_FILE"
+    apt update -y 2>&1 | tee -a "$LOG_FILE"
 
-    # Set non-interactive mode and install nvidia-docker2 without prompts
     export DEBIAN_FRONTEND=noninteractive
-    echo 'nvidia-docker2 nvidia-docker2/daemon.json boolean false' | sudo debconf-set-selections
-    sudo apt-get install -y -o Dpkg::Options::="--force-confold" nvidia-docker2
+    echo 'nvidia-docker2 nvidia-docker2/daemon.json boolean false' | debconf-set-selections
+    apt-get install -y -o Dpkg::Options::="--force-confold" nvidia-docker2
 
-    # Configure Docker daemon after installation
     configure_docker_nvidia_runtime
 
-    sudo systemctl restart docker 2>&1 | tee -a "$LOG_FILE"
+    systemctl restart docker 2>&1 | tee -a "$LOG_FILE"
 
     success "NVIDIA Container Toolkit installed successfully."
 }
@@ -248,15 +234,14 @@ install_nvidia_container_toolkit() {
 configure_docker_nvidia_runtime() {
     info "Configuring Docker daemon for NVIDIA runtime..."
     
-    sudo mkdir -p /etc/docker
+    mkdir -p /etc/docker
     
     if [[ -f /etc/docker/daemon.json ]]; then
         info "Backing up existing daemon.json..."
-        sudo cp /etc/docker/daemon.json /etc/docker/daemon.json.backup.$(date +%s)
+        cp /etc/docker/daemon.json /etc/docker/daemon.json.backup.$(date +%s)
     fi
     
-    # Create the proper daemon.json configuration
-    sudo tee /etc/docker/daemon.json > /dev/null << 'EOF'
+    tee /etc/docker/daemon.json > /dev/null << 'EOF'
 {
     "default-runtime": "nvidia",
     "runtimes": {
@@ -273,8 +258,8 @@ EOF
 
 cleanup() {
     info "Cleaning up unnecessary packages..."
-    sudo apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
-    sudo apt autoclean -y 2>&1 | tee -a "$LOG_FILE"
+    apt autoremove -y 2>&1 | tee -a "$LOG_FILE"
+    apt autoclean -y 2>&1 | tee -a "$LOG_FILE"
     success "Cleanup completed."
 }
 
@@ -299,7 +284,7 @@ verify_rust_installation() {
 
 verify_docker_nvidia() {
     info "Verifying Docker with NVIDIA support..."
-    if sudo docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi &> /dev/null; then
+    if docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi &> /dev/null; then
         success "Docker with NVIDIA support verified successfully."
     else
         info "NVIDIA Docker test skipped (GPU may not be available or drivers not loaded yet)."
@@ -320,7 +305,7 @@ install_gpu_drivers
 
 install_docker
 
-add_user_to_docker_group
+install_docker_compose
 
 install_nvidia_container_toolkit
 
