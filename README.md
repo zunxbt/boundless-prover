@@ -64,7 +64,7 @@ apt update && apt install -y curl
 ```
 - Execute this command to run boundless prover
 ```
-[ -f boundless.sh ] && rm boundless.sh; curl -o boundless.sh https://raw.githubusercontent.com/zunxbt/boundless-prover/refs/heads/main/boundless.sh && chmod +x boundless.sh && . ./boundless.sh
+[ -f boundless.sh ] && rm boundless.sh; curl -o boundless.sh https://raw.githubusercontent.com/Stevesv1/boundless-prover/refs/heads/main/boundless.sh && chmod +x boundless.sh && . ./boundless.sh
 ```
 ## ⚙️ Check Logs
 - Use the below command to check logs
