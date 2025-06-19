@@ -17,6 +17,17 @@ error() {
     printf "\e[31m[ERROR]\e[0m %s\n" "$1" >&2
 }
 
+warning() {
+    printf "\e[33m[WARNING]\e[0m %s\n" "$1"
+}
+
+is_docker_container() {
+    if [[ -f /.dockerenv ]] || grep -q 'docker\|lxc' /proc/1/cgroup 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
 is_package_installed() {
     dpkg -s "$1" &> /dev/null
 }
@@ -48,8 +59,6 @@ update_system() {
 
 install_packages() {
     local packages=(
-        nvtop
-        ubuntu-drivers-common
         build-essential
         libssl-dev
         pkg-config
@@ -63,12 +72,23 @@ install_packages() {
         gnupg-agent
     )
 
+    # Add nvtop only if not in container
+    if ! is_docker_container; then
+        packages+=(nvtop ubuntu-drivers-common)
+    fi
+
     info "Installing essential packages: ${packages[*]}..."
     apt install -y "${packages[@]}" | tee -a "$LOG_FILE"
     success "Essential packages installed successfully."
 }
 
 install_gpu_drivers() {
+    if is_docker_container; then
+        warning "Running inside Docker container. Skipping GPU driver installation."
+        warning "GPU drivers should be installed on the host system."
+        return 0
+    fi
+
     info "Checking for existing NVIDIA GPU driver..."
 
     if lsmod | grep -q "^nvidia"; then
@@ -98,6 +118,7 @@ install_gpu_drivers() {
         info "Installing GPU driver package: $driver"
         if apt-get install -y "$driver" 2>&1 | tee -a "$LOG_FILE"; then
             success "GPU driver ($driver) installed successfully."
+            warning "System reboot may be required for GPU drivers to take effect."
         else
             error "Failed to install GPU driver ($driver)."
             return 1
@@ -148,6 +169,17 @@ install_just() {
 }
 
 install_cuda() {
+    if is_docker_container; then
+        info "Running inside Docker container. Checking for CUDA runtime availability..."
+        if command -v nvidia-smi &> /dev/null; then
+            success "CUDA runtime is available via host GPU drivers."
+            return 0
+        else
+            warning "CUDA runtime not available. Ensure container is run with --gpus all flag."
+            return 0
+        fi
+    fi
+
     if is_package_installed "cuda-toolkit"; then
         info "CUDA Toolkit is already installed. Skipping CUDA installation."
     else
@@ -165,6 +197,15 @@ install_cuda() {
 }
 
 install_docker() {
+    if is_docker_container; then
+        warning "Running inside Docker container. Docker-in-Docker setup detected."
+        info "Checking if Docker socket is mounted from host..."
+        if [[ -S /var/run/docker.sock ]]; then
+            success "Docker socket is available from host. Using host Docker daemon."
+            return 0
+        fi
+    fi
+
     if command -v docker &> /dev/null; then
         info "Docker is already installed. Skipping Docker installation."
     else
@@ -178,11 +219,12 @@ install_docker() {
 
         apt install -y docker-ce docker-ce-cli containerd.io 2>&1 | tee -a "$LOG_FILE"
 
-        systemctl enable docker 2>&1 | tee -a "$LOG_FILE"
+        if ! is_docker_container; then
+            systemctl enable docker 2>&1 | tee -a "$LOG_FILE"
+            systemctl start docker 2>&1 | tee -a "$LOG_FILE"
+        fi
 
-        systemctl start docker 2>&1 | tee -a "$LOG_FILE"
-
-        success "Docker installed and started successfully."
+        success "Docker installed successfully."
     fi
 }
 
@@ -203,6 +245,17 @@ install_docker_compose() {
 }
 
 install_nvidia_container_toolkit() {
+    if is_docker_container; then
+        warning "Running inside Docker container. NVIDIA Container Toolkit should be installed on host."
+        info "Checking GPU availability in container..."
+        if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+            success "GPU is accessible in container via host NVIDIA runtime."
+        else
+            warning "GPU not accessible. Ensure container is run with --gpus all flag."
+        fi
+        return 0
+    fi
+
     info "Checking NVIDIA Container Toolkit installation..."
 
     if is_package_installed "nvidia-docker2"; then
@@ -232,6 +285,11 @@ install_nvidia_container_toolkit() {
 }
 
 configure_docker_nvidia_runtime() {
+    if is_docker_container; then
+        warning "Skipping Docker daemon configuration inside container."
+        return 0
+    fi
+
     info "Configuring Docker daemon for NVIDIA runtime..."
     
     mkdir -p /etc/docker
@@ -284,6 +342,17 @@ verify_rust_installation() {
 
 verify_docker_nvidia() {
     info "Verifying Docker with NVIDIA support..."
+    
+    if is_docker_container; then
+        info "Running inside container - checking direct GPU access..."
+        if command -v nvidia-smi &> /dev/null && nvidia-smi &> /dev/null; then
+            success "GPU is accessible in container."
+        else
+            warning "GPU not accessible in container."
+        fi
+        return 0
+    fi
+    
     if docker run --rm --gpus all nvidia/cuda:11.0.3-base-ubuntu20.04 nvidia-smi &> /dev/null; then
         success "Docker with NVIDIA support verified successfully."
     else
@@ -291,7 +360,13 @@ verify_docker_nvidia() {
     fi
 }
 
+# Main execution
 info "===== Script Execution Started at $(date) ====="
+
+if is_docker_container; then
+    warning "Docker container environment detected!"
+    warning "Some operations will be skipped to prevent system conflicts."
+fi
 
 check_os
 
@@ -322,6 +397,12 @@ cleanup
 verify_docker_nvidia
 
 success "All tasks completed successfully!"
+
+if is_docker_container; then
+    info "Running in Docker container - no system reboot required."
+else
+    info "If GPU drivers were installed, a system reboot may be required."
+fi
 
 info "===== Script Execution Ended at $(date) ====="
 
