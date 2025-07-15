@@ -1,4 +1,4 @@
-<h2 align=center>Boundless Prover Node Guide</h2>
+<h2 align=center>Boundless Prover Node Guide - NOT UPDATED ❌ </h2>
 
 ## 💻 System Requirements
 
