@@ -229,8 +229,8 @@ print_success "Dependencies installed"
 print_step "Cloning Boundless repository..."
 git clone https://github.com/boundless-xyz/boundless
 cd boundless
-git checkout release-0.10
-print_success "Repository cloned and checked out to release-0.10"
+git checkout v0.12.1
+print_success "Repository cloned and checked out to v0.12.1"
 
 print_step "Replacing setup script..."
 rm scripts/setup.sh
